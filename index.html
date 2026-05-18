@@ -276,7 +276,46 @@ $id('btn-cancel-prompt').onclick=()=>m.remove();$id('btn-ok-prompt').onclick=()=
 
 async function finishExam(isT){
 window.onbeforeunload=null;clearInterval(state.cbt.timerInterval);clearInterval(syncInterval);showToast('Menghitung & Mengirim jawaban...','info');
-try{let skorPG=0,skorEssay=0;const dj=state.cbt.questions.map(q=>{let is_correct=false,ai_score=0;if(q.type==='pg'){is_correct=q.answer===q.kunci_jawaban;if(is_correct){skorPG+=(q.bobot||10);ai_score=q.bobot||10;}}else if(q.type==='essay'){const ans=String(q.answer||'').toLowerCase(),key=String(q.kunci_jawaban||'').toLowerCase(),bobot=q.bobot||20;if(key){const kA=key.split(',').map(x=>x.trim()).filter(x=>x);let mC=0;kA.forEach(x=>{if(ans.includes(x))mC++;});if(mC>0)ai_score=bobot;else if(ans.length>15)ai_score=Math.floor(bobot/2);}else{if(ans.length>20)ai_score=bobot;else if(ans.length>5)ai_score=Math.floor(bobot/2);}skorEssay+=ai_score;}return{id:q.id,type:q.type,answer:q.answer,is_correct,ai_score};});const totalSkor=skorPG+skorEssay;await db.from('hasil_ujian').update({status:'selesai',skor_pg:skorPG,skor_essay:skorEssay,total_skor:totalSkor,waktu_selesai:new Date(),detail_jawaban:dj}).eq('nis',state.user.name).eq('mapel',state.cbt.activeMapel);localStorage.removeItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`);if(APPS_SCRIPT_URL!=='GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA'){await fetch(APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify({nis:state.user.name,namaSiswa:state.user.realName||state.user.name,token:state.examToken,skorPG:skorPG,skorEssay:skorEssay})});}if(isT)showToast('Waktu habis! Jawaban otomatis dikirim.','info');else showToast('Ujian selesai. Nilai direkam.','success');await loadHasilUjianFromDB();state.view='cbt-result';render();}catch(e){showToast('Terjadi kesalahan saat mengirim.','error');}
+try{let skorPG=0,skorEssay=0;const dj=state.cbt.questions.map(q=>{let is_correct=false,ai_score=0;if(q.type==='pg'){is_correct=q.answer===q.kunci_jawaban;if(is_correct){skorPG+=(q.bobot||10);ai_score=q.bobot||10;}}else if(q.type==='essay'){const ans=String(q.answer||'').toLowerCase(),key=String(q.kunci_jawaban||'').toLowerCase(),bobot=q.bobot||20;if(key){const kA=key.split(',').map(x=>x.trim()).filter(x=>x);let mC=0;kA.forEach(x=>{if(ans.includes(x))mC++;});if(mC>0)ai_score=bobot;else if(ans.length>15)ai_score=Math.floor(bobot/2);}else{if(ans.length>20)ai_score=bobot;else if(ans.length>5)ai_score=Math.floor(bobot/2);}skorEssay+=ai_score;}return{id:q.id,type:q.type,answer:q.answer,is_correct,ai_score};});const totalSkor=skorPG+skorEssay;await db.from('hasil_ujian').update({status:'selesai',skor_pg:skorPG,skor_essay:skorEssay,total_skor:totalSkor,waktu_selesai:new Date(),detail_jawaban:dj}).eq('nis',state.user.name).eq('mapel',state.cbt.activeMapel);localStorage.removeItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`);if(APPS_SCRIPT_URL!=='GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA'){await if (APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT_ANDA') {
+  try {
+    const identitas = getExportIdentity ? getExportIdentity() : {
+      namaLembaga: state.pengaturanUmum.namaLembaga || '',
+      namaUjian: state.pengaturanUmum.namaUjian || '',
+      tahunAjaran: state.pengaturanUmum.tahunAjaran || '',
+      semester: state.pengaturanUmum.semester || ''
+    };
+
+    await if (APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'https://script.google.com/macros/s/AKfycby6reQ9R2mxS74YV96dAYlhEqaBHhoLl2ojqtd4_Wt9veUomfJbA6sTNsjG0WHwdHRBLg/exec') {
+  try {
+    const identitas = getExportIdentity ? getExportIdentity() : {
+      namaLembaga: state.pengaturanUmum.namaLembaga || '',
+      namaUjian: state.pengaturanUmum.namaUjian || '',
+      tahunAjaran: state.pengaturanUmum.tahunAjaran || '',
+      semester: state.pengaturanUmum.semester || ''
+    };
+
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({
+        nis: state.user.name,
+        namaSiswa: state.user.realName || state.user.name,
+        kelas: state.user.kelas || '',
+        mapel: state.cbt.activeMapel,
+        skorPG: skorPG,
+        skorEssay: skorEssay,
+        totalSkor: totalSkor,
+        status: 'selesai',
+        tahunAjaran: identitas.tahunAjaran,
+        semester: identitas.semester,
+        namaLembaga: identitas.namaLembaga,
+        namaUjian: identitas.namaUjian
+      })
+    });
+  } catch (err) {
+    console.warn('Gagal mengirim rekap ke Apps Script:', err);
+  }
+}
 }
 
 function getCBTResultHTML(){return `<div class="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-6"><div class="bg-white dark:bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] shadow-soft border border-slate-100 dark:border-slate-800 p-8 sm:p-12 max-w-md w-full text-center relative overflow-hidden"><div class="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div><div class="w-20 h-20 sm:w-28 sm:h-28 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-5xl sm:text-6xl mx-auto mb-6 sm:mb-8 shadow-inner"><i class="fas fa-check-circle"></i></div><h2 class="text-2xl sm:text-3xl font-black mb-2 sm:mb-3 tracking-tight text-slate-800 dark:text-white">Ujian Selesai!</h2><p class="font-medium text-sm sm:text-base text-slate-500 dark:text-slate-400 mb-8 sm:mb-10 leading-relaxed">Terima kasih, <strong class="text-slate-800 dark:text-slate-200">${state.user.realName}</strong>. Jawaban Anda telah tersimpan dengan aman.</p><button onclick="state.view='student-dashboard'; render();" class="px-4 py-3 sm:px-6 sm:py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm sm:text-base rounded-xl sm:rounded-2xl font-bold transition-all w-full shadow-lg shadow-slate-900/10 flex items-center justify-center gap-2 hover:scale-[0.98]"><i class="fas fa-home"></i> Kembali ke Dashboard</button></div></div>`;}
