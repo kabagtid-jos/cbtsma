@@ -54,7 +54,21 @@ if(mR)state.mapel=mR.list_data||[];if(kR)state.kelas=kR.list_data||[];if(tR)stat
 }catch(e){showToast('Tabel master_data belum siap.','error');}
 }
 
-async function saveMasterDataToDB(k,d){try{const{error}=await db.from('master_data').upsert({kategori:k,list_data:d});if(error)throw error;}catch(e){showToast('Gagal simpan ke DB: '+e.message,'error');throw e;}}
+async function saveMasterDataToDB(k,d){
+  try{
+    const { error } = await db
+      .from('master_data')
+      .upsert(
+        { kategori: k, list_data: d },
+        { onConflict: 'kategori' }
+      );
+
+    if(error) throw error;
+  }catch(e){
+    showToast('Gagal simpan ke DB: '+e.message,'error');
+    throw e;
+  }
+}
 async function loadDataGuruFromDB(){try{const{data,error}=await db.from('guru').select('*').order('id',{ascending:true});if(!error)state.adminSetup.dataGuru=data||[];}catch(e){}}
 async function loadDataSiswaFromDB(){try{const{data,error}=await db.from('siswa').select('*').order('id',{ascending:true});if(!error)state.adminSetup.dataSiswa=data||[];}catch(e){}}
 async function loadHasilUjianFromDB(){try{const{data,error}=await db.from('hasil_ujian').select('*').order('waktu_mulai',{ascending:false});if(!error)state.hasilUjian=data||[];}catch(e){}}
