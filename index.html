@@ -604,7 +604,26 @@ function updateProgressUI(){const pP=$id('prog-pg'),pE=$id('prog-es');if(!pP||!p
 
 function closeBuatSoalModal(){const m=$id('buat-soal-modal');if(m)m.remove();render();}
 
-function toggleOpsiJawaban(){const j=$id('input-jenis').value;if(j==='pg'){$id('container-opsi').classList.remove('hidden');$id('container-kunci-essay').classList.add('hidden');$id('radio-a').required=true;}else{$id('container-opsi').classList.add('hidden');$id('container-kunci-essay').classList.remove('hidden');$id('radio-a').required=false;}}
+function toggleOpsiJawaban(){
+    const jenisEl=$id('input-jenis'),containerOpsi=$id('container-opsi'),containerEssay=$id('container-kunci-essay'),essayInput=$id('input-kunci-essay');
+    const j=jenisEl?jenisEl.value:'pg';
+    const opsiInputs=['opsi-a','opsi-b','opsi-c','opsi-d'].map(id=>$id(id)).filter(Boolean);
+    const radioInputs=Array.from(document.querySelectorAll('input[name="kunci_pg"]'));
+    const aiAktif=state.guruSetup.koreksiAIActive!==false;
+    if(j==='pg'){
+        if(containerOpsi)containerOpsi.classList.remove('hidden');
+        if(containerEssay)containerEssay.classList.add('hidden');
+        opsiInputs.forEach(el=>{el.disabled=false;el.required=true;});
+        radioInputs.forEach((el,idx)=>{el.disabled=false;el.required=idx===0;});
+        if(essayInput){essayInput.disabled=true;essayInput.required=false;}
+    }else{
+        if(containerOpsi)containerOpsi.classList.add('hidden');
+        if(containerEssay)containerEssay.classList.toggle('hidden',!aiAktif);
+        opsiInputs.forEach(el=>{el.required=false;el.disabled=true;});
+        radioInputs.forEach(el=>{el.required=false;el.disabled=true;el.checked=false;});
+        if(essayInput){essayInput.disabled=!aiAktif;essayInput.required=false;}
+    }
+}
 
 function formatText(cmd){document.execCommand(cmd,false,null);$id('input-pertanyaan-editor').focus();}
 
