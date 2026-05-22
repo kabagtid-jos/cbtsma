@@ -230,10 +230,92 @@ async function handleTokenConfirmation(e,m){e.preventDefault();const t=$id('inpu
 
 function startAutoSync(){clearInterval(syncInterval);syncInterval=setInterval(async()=>{if(state.cbt.hasUnsyncedAnswers){try{const ls=localStorage.getItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`);if(ls){await db.from('hasil_ujian').update({detail_jawaban:JSON.parse(ls)}).eq('nis',state.user.name).eq('mapel',state.cbt.activeMapel);state.cbt.hasUnsyncedAnswers=false;const ss=$id('sync-status');if(ss)ss.innerHTML='<i class="fas fa-cloud-check text-emerald-500" title="Tersinkronisasi"></i>';}}catch(e){console.error('Sync DB Error');}}},30000);}
 
+function normalizeQuestionType(jenis){
+const t=String(jenis||'').trim().toLowerCase();
+return (t==='essay'||t==='esai'||t.includes('essay')||t.includes('esai'))?'essay':'pg';
+}
+function shuffleArray(arr){
+for(let i=arr.length-1;i>0;i--){
+const j=Math.floor(Math.random()*(i+1));
+[arr[i],arr[j]]=[arr[j],arr[i]];
+}
+return arr;
+}
+function serializeCBTQuestions(qs){
+return qs.map(q=>({
+id:q.id,
+type:q.type,
+manual:q.manual===true,
+answer:q.manual===true?null:q.answer,
+is_correct:q.type==='pg'&&q.answer===q.kunci_jawaban,
+ragu:q.ragu||false,
+options:q.options
+}));
+}
+
 async function resumeExam(m,iN=false){
-state.cbt.activeMapel=m;let sd=state.adminSetup.dataSiswa.find(s=>s.nis===state.user.name);if(!sd)sd={nama_lengkap:state.user.realName,kelas:state.user.kelas||'7A'};
-try{if(iN)await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan'}]);const{data:sD}=await db.from('soal').select('*').eq('mapel',m).eq('kelas',sd.kelas);const lS=localStorage.getItem(`cbt_ans_${state.user.name}_${m}`),pLS=lS?JSON.parse(lS):null;const cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===sd.kelas)||{acakSoal:true,acakJawaban:true};if(sD&&sD.length>0){let qs=sD.map(d=>{let ans=null,ragu=false,savedOpts=null;if(pLS){const f=pLS.find(x=>x.id===d.id);if(f){ans=f.answer;ragu=f.ragu;savedOpts=f.options;}}let opts=savedOpts||[...(d.opsi_jawaban||[])];if(!savedOpts&&cfg.acakJawaban!==false&&opts.length>0){for(let i=opts.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[opts[i],opts[j]]=[opts[j],opts[i]];}}return{id:d.id,type:d.jenis,bobot:d.bobot,text:d.pertanyaan,gambar:d.gambar_url,options:opts,kunci_jawaban:d.kunci_jawaban,manual:(d.jenis==='essay'&&!String(d.kunci_jawaban||'').trim()),answer:ans,ragu:ragu||false};});if(pLS&&pLS.length===qs.length){qs.sort((a,b)=>pLS.findIndex(x=>x.id===a.id)-pLS.findIndex(x=>x.id===b.id));}else{let qsPG=qs.filter(q=>q.type==='pg'),qsEs=qs.filter(q=>q.type==='essay');if(cfg.acakSoal!==false){for(let i=qsPG.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[qsPG[i],qsPG[j]]=[qsPG[j],qsPG[i]];}for(let i=qsEs.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[qsEs[i],qsEs[j]]=[qsEs[j],qsEs[i]];}}qs=[...qsPG,...qsEs];localStorage.setItem(`cbt_ans_${state.user.name}_${m}`,JSON.stringify(qs.map(q=>({id:q.id,type:q.type,manual:q.manual===true,answer:q.manual===true?null:q.answer,is_correct:q.type==='pg'&&q.answer===q.kunci_jawaban,ragu:false,options:q.options}))));}state.cbt.questions=qs;}else showToast('Soal belum ada di database.','info');}catch(er){console.error(er);}
-const jw=state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===sd.kelas);state.cbt.timeLeft=(jw&&jw.durasi?parseInt(jw.durasi):60)*60;state.cbt.currentIndex=0;clearInterval(studentTimerInterval);state.cbt.hasUnsyncedAnswers=false;state.view='cbt-exam';startTimer();startAutoSync();render();
+state.cbt.activeMapel=m;
+let sd=state.adminSetup.dataSiswa.find(s=>s.nis===state.user.name);
+if(!sd)sd={nama_lengkap:state.user.realName,kelas:state.user.kelas||'7A'};
+try{
+if(iN)await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan'}]);
+const{data:sD}=await db.from('soal').select('*').eq('mapel',m).eq('kelas',sd.kelas);
+const lS=localStorage.getItem(`cbt_ans_${state.user.name}_${m}`);
+const pLS=lS?JSON.parse(lS):null;
+const savedById=new Map((pLS||[]).map((x,idx)=>[String(x.id),{...x,_order:idx}]));
+const cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===sd.kelas)||{acakSoal:true,acakJawaban:true};
+if(sD&&sD.length>0){
+let qs=sD.map((d,idx)=>{
+const saved=savedById.get(String(d.id));
+let ans=saved?saved.answer:null;
+let ragu=saved?saved.ragu:false;
+let savedOpts=saved&&Array.isArray(saved.options)?saved.options:null;
+let type=normalizeQuestionType(d.jenis);
+let opts=savedOpts||[...(d.opsi_jawaban||[])];
+if(type==='pg'&&!savedOpts&&cfg.acakJawaban!==false&&opts.length>0)shuffleArray(opts);
+return{
+id:d.id,
+type,
+_originalIndex:idx,
+_savedOrder:saved?saved._order:null,
+bobot:d.bobot,
+text:d.pertanyaan,
+gambar:d.gambar_url,
+options:opts,
+kunci_jawaban:d.kunci_jawaban,
+manual:(type==='essay'&&!String(d.kunci_jawaban||'').trim()),
+answer:ans,
+ragu:ragu||false
+};
+});
+let qsPG=qs.filter(q=>q.type==='pg');
+let qsEssay=qs.filter(q=>q.type==='essay');
+if(pLS&&pLS.length>0){
+const keepSavedOrder=(a,b)=>{
+const ao=a._savedOrder!==null?a._savedOrder:Number.MAX_SAFE_INTEGER;
+const bo=b._savedOrder!==null?b._savedOrder:Number.MAX_SAFE_INTEGER;
+return ao-bo||a._originalIndex-b._originalIndex;
+};
+qsPG.sort(keepSavedOrder);
+qsEssay.sort(keepSavedOrder);
+}else if(cfg.acakSoal!==false){
+shuffleArray(qsPG);
+shuffleArray(qsEssay);
+}
+qs=[...qsPG,...qsEssay].map(({_originalIndex,_savedOrder,...q})=>q);
+localStorage.setItem(`cbt_ans_${state.user.name}_${m}`,JSON.stringify(serializeCBTQuestions(qs)));
+state.cbt.questions=qs;
+}else showToast('Soal belum ada di database.','info');
+}catch(er){console.error(er);}
+const jw=state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===sd.kelas);
+state.cbt.timeLeft=(jw&&jw.durasi?parseInt(jw.durasi):60)*60;
+state.cbt.currentIndex=0;
+clearInterval(studentTimerInterval);
+state.cbt.hasUnsyncedAnswers=false;
+state.view='cbt-exam';
+startTimer();
+startAutoSync();
+render();
 }
 
 function getCBTExamHTML(){
