@@ -657,17 +657,50 @@ return Array.isArray(v)?v.map(x=>String(x).trim()).filter(Boolean):(typeof v==='
 }
 function getBankSoalKey(mapel,kelas){return `${String(mapel||'').trim()}|||${String(kelas||'').trim()}`;}
 function buildPembuatSoalRows(){
-const bankMap={};(state.guruSetup.bankSoal||[]).forEach(g=>{bankMap[getBankSoalKey(g.mapel,g.kelas)]=g;});
-const aktivitas=Array.isArray(state.adminSetup.pembuatSoal)?state.adminSetup.pembuatSoal:[];
-return (state.adminSetup.dataGuru||[]).map(g=>{
-const niy=String(g.niy||''),nama=g.nama||niy||'-',mapelList=normListData(g.mapel),kelasList=normListData(g.kelas),details=[],seen={};
-aktivitas.filter(a=>String(a.niy||'')===niy).forEach(a=>{
-const key=getBankSoalKey(a.mapel,a.kelas);if(seen[key])return;
-const b=bankMap[key]||{},pg=parseInt(b.pg)||0,essay=parseInt(b.essay)||0,jumlahTercatat=parseInt(a.jumlah)||0,totalAktual=pg+essay;
-details.push({mapel:a.mapel,kelas:a.kelas,pg,essay,total:totalAktual,source:'Login & Simpan Soal',lastUpdate:a.lastUpdate||a.waktu||'',jumlahTercatat});seen[key]=true;
+const bankMap={};
+(state.guruSetup.bankSoal||[]).forEach(g=>{
+    bankMap[getBankSoalKey(g.mapel,g.kelas)]=g;
 });
-const totalPG=details.reduce((a,d)=>a+(d.pg||0),0),totalEssay=details.reduce((a,d)=>a+(d.essay||0),0),totalSoal=details.reduce((a,d)=>a+(d.total||0),0),lastUpdate=details.map(d=>d.lastUpdate).filter(Boolean).sort().pop()||'';
-return{niy,nama,mapel:mapelList,kelas:kelasList,status:details.length>0?'sudah':'belum',source:details.length>0?'Login & Simpan Soal':'-',details,totalPG,totalEssay,totalSoal,lastUpdate};
+const aktivitas=Array.isArray(state.adminSetup.pembuatSoal)?state.adminSetup.pembuatSoal:[];
+const getLatestSoalUpdate=(soalList=[])=>soalList.map(s=>s.updated_at||s.created_at||s.lastUpdate||s.waktu||s.tanggal||'').filter(Boolean).sort().pop()||'';
+const addDetail=(details,seen,item)=>{
+    const key=getBankSoalKey(item.mapel,item.kelas);
+    if(seen[key])return;
+    const b=bankMap[key]||{},pg=parseInt(b.pg)||0,essay=parseInt(b.essay)||0,totalAktual=pg+essay,jumlahTercatat=parseInt(item.jumlah)||0;
+    details.push({
+        mapel:item.mapel,
+        kelas:item.kelas,
+        pg,
+        essay,
+        total:totalAktual,
+        source:item.source||'Tabel soal aktual',
+        lastUpdate:item.lastUpdate||getLatestSoalUpdate(b.soalList||[])||'',
+        jumlahTercatat
+    });
+    seen[key]=true;
+};
+return (state.adminSetup.dataGuru||[]).map(g=>{
+    const niy=String(g.niy||''),nama=g.nama||niy||'-',mapelList=normListData(g.mapel),kelasList=normListData(g.kelas),details=[],seen={};
+
+    // 1) Data aktivitas tetap dipakai untuk mengetahui guru yang pernah menyimpan/import soal.
+    aktivitas.filter(a=>String(a.niy||'')===niy).forEach(a=>{
+        addDetail(details,seen,{...a,source:'Riwayat aktivitas guru'});
+    });
+
+    // 2) Fallback penting: jika aktivitas belum tercatat, status tetap dicek dari tabel soal aktual.
+    //    Ini memperbaiki kasus admin menampilkan "Belum" padahal di panel guru/database soal sudah ada.
+    mapelList.forEach(mp=>{
+        kelasList.forEach(kl=>{
+            const key=getBankSoalKey(mp,kl),b=bankMap[key],pg=parseInt(b&&b.pg)||0,essay=parseInt(b&&b.essay)||0;
+            if(b&&(pg+essay)>0){
+                addDetail(details,seen,{mapel:mp,kelas:kl,source:'Tabel soal aktual',lastUpdate:getLatestSoalUpdate(b.soalList||[]),jumlah:pg+essay});
+            }
+        });
+    });
+
+    const totalPG=details.reduce((a,d)=>a+(d.pg||0),0),totalEssay=details.reduce((a,d)=>a+(d.essay||0),0),totalSoal=details.reduce((a,d)=>a+(d.total||0),0),lastUpdate=details.map(d=>d.lastUpdate).filter(Boolean).sort().pop()||'';
+    const sources=[...new Set(details.map(d=>d.source).filter(Boolean))];
+    return{niy,nama,mapel:mapelList,kelas:kelasList,status:details.length>0?'sudah':'belum',source:sources.join(' + ')||'-',details,totalPG,totalEssay,totalSoal,lastUpdate};
 });
 }
 function updatePembuatSoalFilter(k,v){
