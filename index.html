@@ -394,6 +394,7 @@ const j=Math.floor(Math.random()*(i+1));
 return arr;
 }
 function serializeCBTQuestions(qs){
+// Data progress siswa tidak menyimpan kunci_jawaban agar kunci tidak ikut masuk localStorage/detail_jawaban.
 return qs.map(q=>({
 id:q.id,
 type:q.type,
@@ -402,8 +403,7 @@ answer:q.manual===true?null:q.answer,
 is_correct:q.type==='pg'&&isQuestionCorrect(q),
 ragu:q.ragu||false,
 options:q.options,
-originalOptions:q.originalOptions||[],
-kunci_jawaban:q.kunci_jawaban
+originalOptions:q.originalOptions||[]
 }));
 }
 
@@ -412,10 +412,21 @@ state.cbt.activeMapel=m;
 let sd=state.adminSetup.dataSiswa.find(s=>s.nis===state.user.name);
 if(!sd)sd={nama_lengkap:state.user.realName,kelas:state.user.kelas||'7A'};
 try{
-if(iN)await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan'}]);
+const storageKey=`cbt_ans_${state.user.name}_${m}`;
+if(iN){
+// Ujian baru harus benar-benar kosong. Ini mencegah jawaban lama di browser otomatis terpilih.
+localStorage.removeItem(storageKey);
+await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan'}]);
+}
 const{data:sD}=await db.from('soal').select('*').eq('mapel',m).eq('kelas',sd.kelas);
-const lS=localStorage.getItem(`cbt_ans_${state.user.name}_${m}`);
-const pLS=lS?JSON.parse(lS):null;
+const existingHasil=(state.hasilUjian||[]).find(h=>h.nis===state.user.name&&h.mapel===m&&h.status==='mengerjakan');
+const lS=localStorage.getItem(storageKey);
+let pLS=null;
+if(!iN&&existingHasil&&Array.isArray(existingHasil.detail_jawaban)&&existingHasil.detail_jawaban.length>0){
+pLS=existingHasil.detail_jawaban;
+}else if(!iN&&lS){
+try{pLS=JSON.parse(lS);}catch(e){pLS=null;}
+}
 const savedById=new Map((pLS||[]).map((x,idx)=>[String(x.id),{...x,_order:idx}]));
 const cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===sd.kelas)||{acakSoal:true,acakJawaban:true};
 if(sD&&sD.length>0){
@@ -466,7 +477,7 @@ shuffleArray(qsEssay);
 }
 // Hasil akhir selalu PG dulu, kemudian Essay.
 qs=[...qsPG,...qsEssay].map(({_originalIndex,_savedOrder,...q})=>q);
-localStorage.setItem(`cbt_ans_${state.user.name}_${m}`,JSON.stringify(serializeCBTQuestions(qs)));
+localStorage.setItem(storageKey,JSON.stringify(serializeCBTQuestions(qs)));
 state.cbt.questions=qs;
 }else showToast('Soal belum ada di database.','info');
 }catch(er){console.error(er);}
@@ -497,7 +508,7 @@ return `<div class="flex flex-col h-[100dvh] bg-slate-100 dark:bg-slate-950 tran
 }
 
 function attachCBTListeners(){window.onbeforeunload=()=>state.view==='cbt-exam'?"Ujian sedang berlangsung, yakin ingin keluar?":null;}
-function saveAnswer(v,doRender=true){const cur=state.cbt.questions[state.cbt.currentIndex];if(isManualEssayQuestion(cur))return;cur.answer=cur.type==='pg'?String(v):v;const dj=state.cbt.questions.map(q=>({id:q.id,type:q.type,manual:q.manual===true,answer:q.manual===true?null:q.answer,is_correct:q.type==='pg'&&isQuestionCorrect(q),ragu:q.ragu,options:q.options,originalOptions:q.originalOptions||[],kunci_jawaban:q.kunci_jawaban}));localStorage.setItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`,JSON.stringify(dj));state.cbt.hasUnsyncedAnswers=true;if(doRender)render();}
+function saveAnswer(v,doRender=true){const cur=state.cbt.questions[state.cbt.currentIndex];if(isManualEssayQuestion(cur))return;cur.answer=cur.type==='pg'?String(v):v;const dj=serializeCBTQuestions(state.cbt.questions);localStorage.setItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`,JSON.stringify(dj));state.cbt.hasUnsyncedAnswers=true;if(doRender)render();}
 function persistCurrentVisibleAnswer(doRender=false){
 const cur=state.cbt.questions[state.cbt.currentIndex];
 if(!cur||isManualEssayQuestion(cur))return;
