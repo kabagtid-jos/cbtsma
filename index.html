@@ -106,6 +106,30 @@ function findTodaySchedule(mapel,kelas){
 const today=getLocalDateKey();
 return (state.jadwalUjian||[]).find(x=>x.mapel===mapel&&x.kelas===kelas&&getScheduleDateKey(x)===today);
 }
+function getExamSessionKey(mapel,kelas,j){
+const d=j?getScheduleDateKey(j):getLocalDateKey();
+const jam=String((j&&j.jam)||'').replace(/[^0-9]/g,'')||'0000';
+return `${kelas||''}_${mapel||''}_${d}_${jam}`.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_\-]/g,'');
+}
+function getResultTimestamp(h){
+const raw=h&&(h.waktu_mulai||h.created_at||h.waktu_selesai);
+const d=raw?new Date(raw):null;
+return d&&!Number.isNaN(d.getTime())?d:null;
+}
+function getStudentScheduleResult(results,mapel,kelas,j,status){
+const list=(results||[]).filter(h=>h&&h.nis===state.user.name&&h.mapel===mapel&&h.kelas===kelas&&(!status||h.status===status));
+if(!j)return list.sort((a,b)=>(new Date(b.waktu_mulai||b.waktu_selesai||0))-(new Date(a.waktu_mulai||a.waktu_selesai||0)))[0]||null;
+const start=getScheduleDateTime(j);
+const dur=parseInt(j.durasi)||60;
+const end=new Date(start.getTime()+dur*60000);
+const before=15*60000,after=30*60000;
+const inWindow=list.filter(h=>{
+const t=getResultTimestamp(h);if(!t)return false;
+const ms=t.getTime();
+return ms>=start.getTime()-before&&ms<=end.getTime()+after;
+});
+return inWindow.sort((a,b)=>(new Date(b.waktu_mulai||b.waktu_selesai||0))-(new Date(a.waktu_mulai||a.waktu_selesai||0)))[0]||null;
+}
 const escapeHTML=(v)=>String(v??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
 const escapeAttr=(v)=>escapeHTML(v).replace(/`/g,'&#96;');
 function isMathMapel(mapel){
@@ -346,12 +370,12 @@ historyCrd+=`<div class="bg-slate-50/50 dark:bg-slate-800/20 rounded-2xl sm:roun
 const historyKeys=new Set();
 allSchedules.forEach(j=>{
 const m=j.mapel;if(!m)return;
-const sD=getScheduleDateTime(j),eD=new Date(sD.getTime()+(parseInt(j.durasi)||60)*60000),hs=mH.find(h=>h.mapel===m&&h.kelas===cL&&h.status==='selesai')||mH.find(h=>h.mapel===m&&h.kelas===cL&&h.status==='mengerjakan')||mH.find(h=>h.mapel===m&&h.kelas===cL),cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL),tampilkanNilai=cfg?cfg.tampilkanNilai!==false:true;
+const sD=getScheduleDateTime(j),eD=new Date(sD.getTime()+(parseInt(j.durasi)||60)*60000),hs=getStudentScheduleResult(mH,m,cL,j,'selesai')||getStudentScheduleResult(mH,m,cL,j,'mengerjakan')||getStudentScheduleResult(mH,m,cL,j),cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL),tampilkanNilai=cfg?cfg.tampilkanNilai!==false:true;
 if((hs&&hs.status==='selesai')||nw>eD){const key=`${m}_${getScheduleDateKey(j)}_${j.jam}`;if(historyKeys.has(key))return;historyKeys.add(key);addHistoryCard(j,m,hs,cfg,tampilkanNilai,sD,eD);}
 });
 todaySchedules.forEach(j=>{
 const m=j.mapel;if(!m)return;
-const sD=getScheduleDateTime(j),eD=new Date(sD.getTime()+(parseInt(j.durasi)||60)*60000),hs=mH.find(h=>h.mapel===m&&h.kelas===cL&&h.status==='selesai')||mH.find(h=>h.mapel===m&&h.kelas===cL&&h.status==='mengerjakan')||mH.find(h=>h.mapel===m&&h.kelas===cL),cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL),tampilkanNilai=cfg?cfg.tampilkanNilai!==false:true;
+const sD=getScheduleDateTime(j),eD=new Date(sD.getTime()+(parseInt(j.durasi)||60)*60000),hs=getStudentScheduleResult(mH,m,cL,j,'selesai')||getStudentScheduleResult(mH,m,cL,j,'mengerjakan')||getStudentScheduleResult(mH,m,cL,j),cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL),tampilkanNilai=cfg?cfg.tampilkanNilai!==false:true;
 if((hs&&hs.status==='selesai')||nw>eD)return;
 let tI=`cd-${m.replace(/\s+/g,'_')}`,sb='',ab='',bdg='bg-blue-50 dark:bg-blue-900/20 text-blue-600';
 if(hs&&hs.status==='mengerjakan'){sb='<span class="text-indigo-600 dark:text-indigo-400 text-[10px] sm:text-xs font-bold flex items-center gap-1.5"><span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-indigo-500 animate-pulse"></span>Mengerjakan</span>';ab=`<button class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold text-xs sm:text-sm py-3 sm:py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-500/20" onclick="openExamConfirmation('${m}')">Lanjutkan Ujian</button>`;bdg='bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600';}
@@ -372,15 +396,15 @@ function initStudentDashTimers(){clearInterval(studentTimerInterval);studentTime
 function openExamConfirmation(m){state.cbt.activeMapel=m;state.view='exam-confirmation';render();}
 function getExamConfirmationHTML(){
 const m=state.cbt.activeMapel,cL=state.user.kelas||'7A';
-const j=findTodaySchedule(m,cL)||state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===cL)||{durasi:60};const hs=state.hasilUjian.find(h=>h.mapel===m&&h.nis===state.user.name);const cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL)||{acakSoal:true};
+const j=findTodaySchedule(m,cL)||state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===cL)||{durasi:60};const hs=getStudentScheduleResult(state.hasilUjian,m,cL,j);const cfg=state.pengaturanUjian.find(p=>p.mapel===m&&p.kelas===cL)||{acakSoal:true};
 const acakTeks=cfg.acakSoal!==false?'Aktif':'Tidak';let titleStatus="",btnText="Mulai Kerjakan Ujian";
 if(hs&&hs.status==='mengerjakan'){titleStatus=`<span class="inline-block bg-white/20 px-2 sm:px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold ml-2 sm:ml-3 border border-white/10">Sedang Berlangsung</span>`;btnText="Lanjutkan Mengerjakan";}
 return `<div class="flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-y-auto"><header class="glass-panel !rounded-none !border-x-0 !border-t-0 px-4 sm:px-6 py-3 sm:py-4 flex items-center sticky top-0 z-20"><button onclick="state.view='student-dashboard'; render();" class="w-8 h-8 sm:w-10 sm:h-10 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-full mr-3 sm:mr-4 transition flex items-center justify-center text-sm sm:text-base"><i class="fas fa-arrow-left"></i></button><div><h1 class="font-extrabold text-slate-800 dark:text-white text-base sm:text-lg tracking-tight">Konfirmasi Ujian</h1><p class="text-[10px] sm:text-xs text-slate-500 font-medium mt-0.5">Pastikan Anda siap sebelum memulai.</p></div></header><main class="flex-1 p-4 sm:p-6 md:p-12 flex items-center justify-center"><div class="bg-white dark:bg-slate-900 rounded-[1.5rem] sm:rounded-[2rem] shadow-soft border border-slate-100 dark:border-slate-800 w-full max-w-3xl overflow-hidden"><div class="bg-gradient-to-br from-indigo-600 to-blue-700 p-6 sm:p-10 text-white relative overflow-hidden"><div class="absolute -right-4 sm:-right-6 -bottom-4 sm:-bottom-6 opacity-10"><i class="fas fa-laptop-code text-7xl sm:text-9xl"></i></div><div class="relative z-10"><div class="flex items-center mb-3 sm:mb-4"><span class="bg-white/20 backdrop-blur-md px-2 sm:px-3 py-1 rounded-lg text-[10px] sm:text-xs font-bold tracking-wider uppercase border border-white/10">Kelas ${cL}</span>${titleStatus}</div><h2 class="text-3xl sm:text-4xl font-black mb-1 sm:mb-2 tracking-tight">${m}</h2><p class="text-indigo-100 font-medium text-xs sm:text-sm opacity-90">Sistem Ujian Berbasis Komputer</p></div></div><div class="p-5 sm:p-8"><div class="grid grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8"><div class="bg-slate-50 dark:bg-slate-800/50 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 dark:border-slate-700/50 text-center"><div class="text-slate-400 mb-1"><i class="fas fa-hourglass-half text-lg sm:text-xl"></i></div><p class="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Durasi</p><p class="font-black text-slate-800 dark:text-white text-lg sm:text-xl">${j.durasi} <span class="text-xs sm:text-sm font-medium text-slate-500">m</span></p></div><div class="bg-slate-50 dark:bg-slate-800/50 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 dark:border-slate-700/50 text-center"><div class="text-slate-400 mb-1"><i class="fas fa-shield-alt text-lg sm:text-xl"></i></div><p class="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Min. Submit</p><p class="font-black text-slate-800 dark:text-white text-lg sm:text-xl">15 <span class="text-xs sm:text-sm font-medium text-slate-500">m</span></p></div><div class="bg-slate-50 dark:bg-slate-800/50 p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 dark:border-slate-700/50 text-center"><div class="text-slate-400 mb-1"><i class="fas fa-random text-lg sm:text-xl"></i></div><p class="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Acak Soal</p><p class="font-black text-slate-800 dark:text-white text-sm sm:text-xl">${acakTeks}</p></div></div><div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200/50 dark:border-amber-800/30 rounded-xl sm:rounded-2xl p-4 sm:p-5 mb-6 sm:mb-8 flex gap-3 sm:gap-4"><div class="text-amber-500 mt-0.5"><i class="fas fa-info-circle text-lg sm:text-xl"></i></div><div class="text-xs sm:text-sm text-amber-800 dark:text-amber-400"><strong class="block mb-1 sm:mb-1.5 font-bold">Penting:</strong><ul class="list-disc pl-4 space-y-1 opacity-90"><li>Pastikan koneksi internet stabil.</li><li>Sistem menyimpan jawaban otomatis.</li><li>Jangan me-refresh halaman saat ujian.</li></ul></div></div><form onsubmit="handleTokenConfirmation(event, '${m}')"><div class="mb-5 sm:mb-6"><label class="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 sm:mb-3 text-center">Token Akses Pengawas</label><input type="text" id="input-token-exam" required class="w-full text-center tracking-[0.5em] sm:tracking-[0.75em] uppercase font-black text-2xl sm:text-3xl px-4 py-3 sm:px-6 sm:py-5 bg-slate-100 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 rounded-xl sm:rounded-2xl outline-none text-slate-800 dark:text-white placeholder-slate-300 dark:placeholder-slate-600 transition-colors" placeholder="XXXXXX"></div><button type="submit" id="btn-submit-token" class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-bold py-3.5 sm:py-5 rounded-xl sm:rounded-2xl transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 sm:gap-3 text-base sm:text-lg"><i class="fas fa-play"></i> ${btnText}</button></form></div></div></main></div>`;
 }
 
-async function handleTokenConfirmation(e,m){e.preventDefault();const t=$id('input-token-exam').value.toUpperCase(),cL=state.user.kelas||'7A',v=state.tokens[`${m}_${cL}`];if(!v)return showToast(`Token untuk ${m} (${cL}) belum dibuat.`,'error');if(t!==v)return showToast('Token ujian SALAH!','error');const b=$id('btn-submit-token');b.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Menyiapkan...';b.disabled=true;await loadHasilUjianFromDB();const isNew=!state.hasilUjian.find(h=>h.mapel===m&&h.nis===state.user.name&&h.kelas===cL&&h.status==='mengerjakan');await resumeExam(m,isNew);}
+async function handleTokenConfirmation(e,m){e.preventDefault();const t=$id('input-token-exam').value.toUpperCase(),cL=state.user.kelas||'7A',v=state.tokens[`${m}_${cL}`];if(!v)return showToast(`Token untuk ${m} (${cL}) belum dibuat.`,'error');if(t!==v)return showToast('Token ujian SALAH!','error');const b=$id('btn-submit-token');b.innerHTML='<i class="fas fa-circle-notch fa-spin"></i> Menyiapkan...';b.disabled=true;await loadHasilUjianFromDB();const j=findTodaySchedule(m,cL)||state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===cL)||{durasi:60};const activeResult=getStudentScheduleResult(state.hasilUjian,m,cL,j,'mengerjakan');const isNew=!activeResult;await resumeExam(m,isNew);}
 
-function startAutoSync(){clearInterval(syncInterval);syncInterval=setInterval(async()=>{if(state.cbt.hasUnsyncedAnswers){try{const ls=localStorage.getItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`);if(ls){let q=db.from('hasil_ujian').update({detail_jawaban:JSON.parse(ls)}).eq('nis',state.user.name).eq('mapel',state.cbt.activeMapel).eq('status','mengerjakan');if(state.cbt.hasilId)q=q.eq('id',state.cbt.hasilId);const {error}=await q;if(error)throw error;state.cbt.hasUnsyncedAnswers=false;const ss=$id('sync-status');if(ss)ss.innerHTML='<i class="fas fa-cloud-check text-emerald-500" title="Tersinkronisasi"></i>';}}catch(e){console.error('Sync DB Error',e);const ss=$id('sync-status');if(ss)ss.innerHTML='<i class="fas fa-cloud-exclamation text-rose-500" title="Belum tersinkron"></i>';}}},30000);}
+function startAutoSync(){clearInterval(syncInterval);syncInterval=setInterval(async()=>{if(state.cbt.hasUnsyncedAnswers){try{const storageKey=`cbt_ans_${state.user.name}_${state.cbt.sessionKey||state.cbt.activeMapel}`;const ls=localStorage.getItem(storageKey);if(ls){let q=db.from('hasil_ujian').update({detail_jawaban:JSON.parse(ls)}).eq('nis',state.user.name).eq('mapel',state.cbt.activeMapel).eq('status','mengerjakan');if(state.cbt.hasilId)q=q.eq('id',state.cbt.hasilId);const {error}=await q;if(error)throw error;state.cbt.hasUnsyncedAnswers=false;const ss=$id('sync-status');if(ss)ss.innerHTML='<i class="fas fa-cloud-check text-emerald-500" title="Tersinkronisasi"></i>';}}catch(e){console.error('Sync DB Error',e);const ss=$id('sync-status');if(ss)ss.innerHTML='<i class="fas fa-cloud-exclamation text-rose-500" title="Belum tersinkron"></i>';}}},30000);}
 
 function normalizeQuestionType(jenis){
 const t=String(jenis||'').trim().toLowerCase();
@@ -412,14 +436,17 @@ state.cbt.activeMapel=m;
 let sd=state.adminSetup.dataSiswa.find(s=>s.nis===state.user.name);
 if(!sd)sd={nama_lengkap:state.user.realName,kelas:state.user.kelas||'7A'};
 try{
-const storageKey=`cbt_ans_${state.user.name}_${m}`;
-let existingHasil=(state.hasilUjian||[]).find(h=>h.nis===state.user.name&&h.mapel===m&&h.kelas===sd.kelas&&h.status==='mengerjakan');
+const j=findTodaySchedule(m,sd.kelas)||state.jadwalUjian.find(x=>x.mapel===m&&x.kelas===sd.kelas)||{durasi:60};
+state.cbt.sessionKey=getExamSessionKey(m,sd.kelas,j);
+const storageKey=`cbt_ans_${state.user.name}_${state.cbt.sessionKey}`;
+let existingHasil=getStudentScheduleResult(state.hasilUjian,m,sd.kelas,j,'mengerjakan');
 if(iN){
-// Ujian baru harus benar-benar kosong. Ini mencegah jawaban lama di browser otomatis terpilih.
+// Ujian baru harus benar-benar kosong dan tidak membawa jawaban dari jadwal lama/mapel lama.
 localStorage.removeItem(storageKey);
-const {data:inserted,error:insertErr}=await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan'}]).select('id,detail_jawaban').single();
+const {data:inserted,error:insertErr}=await db.from('hasil_ujian').insert([{nis:state.user.name,nama_siswa:sd.nama_lengkap,kelas:sd.kelas,mapel:m,status:'mengerjakan',waktu_mulai:new Date()}]).select('id,detail_jawaban,waktu_mulai').single();
 if(insertErr)throw insertErr;
 existingHasil=inserted;
+await loadHasilUjianFromDB();
 }
 state.cbt.hasilId=existingHasil?existingHasil.id:null;
 const{data:sD,error:soalErr}=await db.from('soal').select('*').eq('mapel',m).eq('kelas',sd.kelas);
@@ -570,7 +597,7 @@ if(state.cbt.hasilId)q=q.eq('id',state.cbt.hasilId);
 const {data:updated,error:updateErr}=await q.select('id');
 if(updateErr)throw updateErr;
 if(!updated||updated.length===0)throw new Error('Data ujian aktif tidak ditemukan atau sudah selesai. Silakan refresh dashboard.');
-localStorage.removeItem(`cbt_ans_${state.user.name}_${state.cbt.activeMapel}`);
+localStorage.removeItem(`cbt_ans_${state.user.name}_${state.cbt.sessionKey||state.cbt.activeMapel}`);
 if(APPS_SCRIPT_URL&&APPS_SCRIPT_URL!=='https://script.google.com/macros/s/AKfycby6reQ9R2mxS74YV96dAYlhEqaBHhoLl2ojqtd4_Wt9veUomfJbA6sTNsjG0WHwdHRBLg/exec'){
 try{
 const identitas=getExportIdentity?getExportIdentity():{namaLembaga:state.pengaturanUmum.namaLembaga||'',namaUjian:state.pengaturanUmum.namaUjian||'',tahunAjaran:state.pengaturanUmum.tahunAjaran||'',semester:state.pengaturanUmum.semester||''};
@@ -579,6 +606,7 @@ await fetch(APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify({n
 }
 await loadHasilUjianFromDB();
 state.cbt.hasilId=null;
+state.cbt.sessionKey='';
 state.view='cbt-result';
 render();
 }catch(e){
@@ -591,7 +619,7 @@ startAutoSync();
 
 function getCBTResultHTML(){return `<div class="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-6"><div class="bg-white dark:bg-slate-900 rounded-[2rem] sm:rounded-[2.5rem] shadow-soft border border-slate-100 dark:border-slate-800 p-8 sm:p-12 max-w-md w-full text-center relative overflow-hidden"><div class="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div><div class="w-20 h-20 sm:w-28 sm:h-28 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-5xl sm:text-6xl mx-auto mb-6 sm:mb-8 shadow-inner"><i class="fas fa-check-circle"></i></div><h2 class="text-2xl sm:text-3xl font-black mb-2 sm:mb-3 tracking-tight text-slate-800 dark:text-white">Ujian Selesai!</h2><p class="font-medium text-sm sm:text-base text-slate-500 dark:text-slate-400 mb-8 sm:mb-10 leading-relaxed">Terima kasih, <strong class="text-slate-800 dark:text-slate-200">${state.user.realName}</strong>. Jawaban Anda telah tersimpan dengan aman.</p><button onclick="state.view='student-dashboard'; render();" class="px-4 py-3 sm:px-6 sm:py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm sm:text-base rounded-xl sm:rounded-2xl font-bold transition-all w-full shadow-lg shadow-slate-900/10 flex items-center justify-center gap-2 hover:scale-[0.98]"><i class="fas fa-home"></i> Kembali ke Dashboard</button></div></div>`;}
 
-async function openStudentReview(mapel){showToast('Memuat pembahasan...','info');try{const h=state.hasilUjian.find(x=>x.mapel===mapel&&x.nis===state.user.name);if(!h||!h.detail_jawaban)return showToast('Data belum lengkap','error');const{data:sD}=await db.from('soal').select('*').eq('mapel',mapel);state.cbtReview={mapel:mapel,hasil:h,soal:sD||[]};state.view='student-review';render();}catch(e){showToast('Gagal memuat','error');}}
+async function openStudentReview(mapel){showToast('Memuat pembahasan...','info');try{const h=(state.hasilUjian||[]).filter(x=>x.mapel===mapel&&x.nis===state.user.name&&x.status==='selesai').sort((a,b)=>(new Date(b.waktu_selesai||b.waktu_mulai||0))-(new Date(a.waktu_selesai||a.waktu_mulai||0)))[0];if(!h||!h.detail_jawaban)return showToast('Data belum lengkap','error');const{data:sD}=await db.from('soal').select('*').eq('mapel',mapel);state.cbtReview={mapel:mapel,hasil:h,soal:sD||[]};state.view='student-review';render();}catch(e){showToast('Gagal memuat','error');}}
 
 function getStudentReviewHTML(){
 if(!state.cbtReview.hasil)return '<div class="p-8 text-center text-slate-500 text-sm">Loading...</div>';const h=state.cbtReview.hasil,soalDB=state.cbtReview.soal;let html='';
